@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Account {
-  pub id: i32,
+  pub id: u64,
   pub userName: String,
   pub status: i8,
   pub whitelistAuthority: i8,
@@ -31,8 +31,8 @@ pub struct Profile {
   pub backgroundImgId: i64,
   pub backgroundImgIdStr: String,
   pub backgroundUrl: String,
-  pub birthday: i64,
-  pub city: i32,
+  pub birthday: u64,
+  pub city: u32,
   pub defaultAvatar: bool,
   pub description: String,
   pub detailDescription: String,
@@ -40,25 +40,17 @@ pub struct Profile {
   pub eventCount: i8,
   pub expertTags: Option<String>,
   pub followed: bool,
-  pub followeds: i8,
-  pub follows: i16,
+  pub followeds: u64,
+  pub follows: u64,
   pub gender: i8,
   pub mutual: bool,
   pub nickname: String,
   pub playlistBeSubscribedCount: i8,
-  pub playlistCount: i8,
+  pub playlistCount: u64,
   pub province: i32,
   pub remarkName: Option<String>,
   pub signature: String,
-  pub userId: i64,
+  pub userId: u64,
   pub userType: i8,
   pub vipType: i8,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Login {
-  pub account: Account,
-  pub code: i32,
-  pub loginType: i8,
-  pub profile: Profile,
 }

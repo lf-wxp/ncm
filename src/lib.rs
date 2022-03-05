@@ -1,6 +1,8 @@
 pub mod uri;
 pub mod encrypt;
 pub mod client;
+pub mod model;
+pub mod util;
 
 // #[cfg(test)]
 // mod tests {

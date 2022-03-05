@@ -1,22 +1,28 @@
-use crate::encrypt::Encrypt;
-use crate::uri;
+#![allow(dead_code)]
+use std::fs;
 use chrono::{DateTime, Local};
-use openssl::hash::MessageDigest;
+use anyhow::{self, Result};
+use reqwest::{self, blocking::Response};
+use serde::{Deserialize};
+use serde_json;
+use std::collections::HashMap;
+use log::{info, error};
 use reqwest::header::{
   HeaderMap, ACCEPT, ACCEPT_ENCODING, CONTENT_TYPE, COOKIE, HOST, REFERER, USER_AGENT,
 };
-use reqwest::{self, blocking::Response};
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::fs;
-use std::io::Read;
 
-mod model;
+use crate::encrypt::Encrypt;
+use crate::uri;
+use crate::model;
 
+struct User {
+  id: u64,
+  nickname: String,
+}
 struct NcmClient {
   cookie_path: String,
   http_client: reqwest::blocking::Client,
+  user: Option<User>,
 }
 
 enum Method {
@@ -29,48 +35,54 @@ impl NcmClient {
     NcmClient {
       cookie_path: "/tmp/ncmt_cookie".to_owned(),
       http_client: reqwest::blocking::Client::new(),
+      user: None,
     }
   }
+
   fn request(
     &self,
     url: &str,
     method: Method,
-    data: [(&str, std::string::String); 2],
-  ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("the request params is {:?}", &data);
-    let headers = self.get_post_headers();
-    println!("the headers is {:#?}", &headers);
-    match method {
+    data: Option<[(&str, String); 2]>,
+  ) -> Result<Response, reqwest::Error> {
+    info!("request params is {:#?}", &data);
+    let response = match method {
       Method::GET => {
         let headers = self.get_get_headers();
-        let mut response = self.http_client.get(url).headers(headers).send()?;
-        Ok(())
+        self.http_client.get(url).headers(headers).send()
       }
       Method::POST => {
-        println!("method is post");
         let headers = self.get_post_headers();
-        let response = self
+        self
           .http_client
           .post(url)
           .headers(headers)
-          .form(&data)
-          .send()?;
-        let text = response.text().unwrap();
-        let data = NcmClient::json_parse::<model::Login>(&text);
-        println!("the text is {:?}", text);
-        println!("the request response is {:#?}", data);
-        Ok(())
+          .form(&data.unwrap())
+          .send()
       }
-    }
+    };
+
+    // log the response
+    match &response {
+      Ok(res) => {
+        info!("response is {:?}", res);
+      },
+      Err(err) => {
+        error!("get response error, error is {:?}", err);
+      }
+    };
+    response
   }
 
-  fn json_parse<'a, T: Deserialize<'a>>(data: &'a str ) -> T {
-    serde_json::from_str::<T>(data).map_err(|e| {
-      format!(
-        "convert result failed, reason: {:?}; content: [{:?}]",
-        e, data
-      )
-    }).unwrap()
+  fn json_parse<'a, T: Deserialize<'a>>(data: &'a str) -> Result<T, serde_json::Error> {
+    serde_json::from_str::<T>(data)
+      .map_err(|e| {
+        format!(
+          "convert result failed, reason: {:?}; content: [{:?}]",
+          e, data
+        );
+        e
+      })
   }
 
   fn get_common_headers() -> HeaderMap {
@@ -120,7 +132,7 @@ impl NcmClient {
     let value = "pc";
     let local: DateTime<Local> = Local::now();
     let times = local.timestamp();
-    let hex_token = Encrypt::encrypt_hex(&times.to_string());
+    let hex_token = Encrypt::encrypt_hex(times.to_string());
     let data = self.get_cookies();
     let make_cookie = format!("version=0;{}={};JSESSIONID-WYYY=%2FKSy%2B4xG6fYVld42G9E%2BxAj9OyjC0BYXENKxOIRH%5CR72cpy9aBjkohZ24BNkpjnBxlB6lzAG4D%5C%2FMNUZ7VUeRUeVPJKYu%2BKBnZJjEmqgpOx%2BU6VYmypKB%5CXb%2F3W7%2BDjOElCb8KlhDS2cRkxkTb9PBDXro41Oq7aBB6M6OStEK8E%2Flyc8%3A{}; _iuqxldmzr_=32; _ntes_nnid={},{}; _ntes_nuid={}; {}", name, value, times, hex_token, hex_token, times + 50, data);
     make_cookie.parse().unwrap()
@@ -139,9 +151,7 @@ impl NcmClient {
     }
   }
 
-  fn login(&self) -> () {
-    let email = "";
-    let password = "";
+  fn login_email(&mut self, email: String, password: String) -> Result<(), anyhow::Error> {
     let password = Encrypt::encrypt_hex(password);
     let client_token = "1_jVUMqWEPke0/1/Vu56xCmJpo5vP1grjn_SOVVDzOc78w8OKLVZ2JH7IfkjSXqgfmh";
     let csrf_token = String::new();
@@ -152,17 +162,64 @@ impl NcmClient {
     params.insert("password".to_owned(), password);
     params.insert("rememberLogin".to_owned(), "true".to_owned());
     let params = Encrypt::encrypt_login(params);
-    // let params = Encrypt::encrypt_login_string(params);
-    self.request(uri::LOGIN, Method::POST, params);
+    let response = self.request(uri::LOGIN, Method::POST, Some(params))?;
+    self.save_cookies(&response);
+    let text = response.text()?;
+    let login = NcmClient::json_parse::<model::response::Login>(&text)?;
+    self.save_login_status(login);
+    Ok(())
+  }
+
+  fn save_login_status(&mut self, login: model::response::Login) -> () {
+    self.user = Some(User {
+      id: login.account.id,
+      nickname: login.profile.nickname,
+    });
+  }
+
+  fn get_user_playlist(&self) -> Result<model::response::Playlist, anyhow::Error> {
+    let uid = self.user.as_ref().unwrap().id;
+    let mut params = HashMap::new();
+    params.insert("uid".to_owned(), uid.to_string());
+    params.insert("limit".to_owned(), "1000".to_string());
+    params.insert("offset".to_owned(), "0".to_string());
+    params.insert("csrf_token".to_owned(), "".to_string());
+    let params = Encrypt::encrypt_login(params);
+    let response = self.request(uri::USER_PLAYLIST, Method::POST, Some(params))?;
+    let text = response.text()?;
+    let playlist = NcmClient::json_parse::<model::response::Playlist>(&text)?;
+    Ok(playlist)
+  }
+
+  fn get_favorite_playlist(&self) -> Result<model::playlist::Playlist, anyhow::Error> {
+    let playlist = self.get_user_playlist()?;
+    match playlist.playlist.get(0) {
+      Some(data ) => Ok(data.clone()),
+      None => Err(anyhow::anyhow!("get favorite playlist error")),
+    }
   }
 }
 
 mod tests {
   use super::*;
+  use crate::util;
 
   #[test]
-  fn login_test() {
-    let ncm_client = NcmClient::new();
-    ncm_client.login();
+  fn login_email_test() {
+    let mut ncm_client = NcmClient::new();
+    let setting = util::get_setting().unwrap();
+    ncm_client.login_email(setting.email, setting.password);
+  }
+
+  #[test]
+  fn get_favorite_test() {
+    let mut ncm_client = NcmClient::new();
+    let setting = util::get_setting().unwrap();
+    ncm_client.login_email(setting.email, setting.password);
+    let favorite = ncm_client.get_favorite_playlist();
+    match favorite {
+      Ok(data) => println!("the favorite playlist is {:?}", data),
+      Err(_) => {}
+    };
   }
 }

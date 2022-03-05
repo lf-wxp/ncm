@@ -1,15 +1,12 @@
 use hex;
 use std::collections::HashMap;
-use std::os::unix::prelude::OsStrExt;
 use rand::distributions::{Alphanumeric, DistString};
 use rand::{thread_rng};
-use serde::Serialize;
 use num_bigint::BigUint;
 use openssl::{
   hash::{hash, MessageDigest},
   symm::{encrypt, Cipher},
 };
-use serde_urlencoded;
 use base64;
 
 
@@ -21,34 +18,15 @@ static PUBKEY: &str = "010001";
 
 impl Encrypt {
   fn create_key(len: usize) -> String {
-    // hex::encode::<Vec<u8>>(
-    //   thread_rng()
-    //     .sample_iter(&Alphanumeric)
-    //     .take(len)
-    //     .collect(),
-    // )[..16]
-    //   .to_string();
     Alphanumeric.sample_string(&mut thread_rng(), len)
   }
 
   pub fn encrypt_login(params: HashMap<String, String>) -> [(&'static str, std::string::String); 2] {
     let data = serde_json::to_string(&params).unwrap();
     let secret = Encrypt::create_key(16);
-    // let secret = "e0e80547fa3ecd5a".to_owned();
     let params = Encrypt::aes(Encrypt::aes(data, NONCE), &secret);
     let enc_sec_key = Encrypt::rsa(secret);
     [("params", params), ("encSecKey", enc_sec_key)]
-    // serde_urlencoded::to_string(&meal).unwrap_or("".to_owned())
-  }
-
-  pub fn encrypt_login_string(params: HashMap<String, String>) -> String {
-    let data = serde_json::to_string(&params).unwrap();
-    let secret = Encrypt::create_key(16);
-    let secret = "e0e80547fa3ecd5a".to_owned();
-    let params = Encrypt::aes(Encrypt::aes(data, NONCE), &secret);
-    let enc_sec_key = Encrypt::rsa(secret);
-    let meal = [("params", params), ("encSecKey", enc_sec_key)];
-    serde_urlencoded::to_string(&meal).unwrap_or("".to_owned())
   }
 
   fn aes(text: String, key: &str) -> String {
@@ -74,7 +52,7 @@ impl Encrypt {
     pow.to_str_radix(16)
   }
 
-  pub fn encrypt_hex(data: &str) -> String {
+  pub fn encrypt_hex(data: String) -> String {
     let password = hash(MessageDigest::md5(), data.as_bytes()).unwrap();
     hex::encode(password)
   }
