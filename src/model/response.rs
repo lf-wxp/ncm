@@ -13,7 +13,13 @@ pub struct Login {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Playlist {
+pub struct PlaylistList {
   pub playlist: Vec<playlist::Playlist>,
+  pub code: i32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Playlist {
+  pub playlist: playlist::Playlist,
   pub code: i32,
 }

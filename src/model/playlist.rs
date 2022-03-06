@@ -2,6 +2,8 @@
 #![allow(dead_code)]
 use serde::{Deserialize, Serialize};
 
+use super::track;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Playlist {
   pub id: u64,
@@ -11,13 +13,15 @@ pub struct Playlist {
   pub trackCount: u32,
   pub createTime: u64,
   pub updateTime: u64,
+  pub creator: Creator,
+  pub tracks: Option<Vec<track::Track>>,
 }
 
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Creator {
   pub avatarUrl: String,
-  pub useId: u64,
+  pub userId: u64,
   pub nickname: String,
   pub backgroundUrl: String,
 }

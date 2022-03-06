@@ -21,7 +21,7 @@ impl Encrypt {
     Alphanumeric.sample_string(&mut thread_rng(), len)
   }
 
-  pub fn encrypt_login(params: HashMap<String, String>) -> [(&'static str, std::string::String); 2] {
+  pub fn encrypt_login(params: HashMap<String, String>) -> [(&'static str, String); 2] {
     let data = serde_json::to_string(&params).unwrap();
     let secret = Encrypt::create_key(16);
     let params = Encrypt::aes(Encrypt::aes(data, NONCE), &secret);

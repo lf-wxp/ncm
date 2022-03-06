@@ -1,10 +1,12 @@
 
-use std::fs;
+use std::{fs, collections::HashMap};
 use std::io::Write;
 use std::path;
 use log::error;
 use config::{Config, ConfigError};
 use serde::Deserialize;
+
+use super::encrypt::Encrypt;
 
 const SETTING_PATH: &str = ".setting";
 
@@ -30,6 +32,12 @@ pub fn json_to_file(name: &str, text: &str) -> () {
 
 pub fn get_setting() -> Result<Setting, ConfigError>  {
   Config::builder().add_source(config::File::with_name(SETTING_PATH)).build()?.try_deserialize::<Setting>()
+}
+
+pub fn build_post_data(data: Vec<(&str, &str)>) -> Option<[(&'static str, String); 2]> {
+  let mut params = HashMap::new();
+  data.iter().for_each(|&(k, v)| { params.insert(k.to_string(), v.to_string());});
+  Some(Encrypt::encrypt_login(params))
 }
 
 mod tests {

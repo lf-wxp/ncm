@@ -5,7 +5,6 @@ use anyhow::{self, Result};
 use reqwest::{self, blocking::Response};
 use serde::{Deserialize};
 use serde_json;
-use std::collections::HashMap;
 use log::{info, error};
 use reqwest::header::{
   HeaderMap, ACCEPT, ACCEPT_ENCODING, CONTENT_TYPE, COOKIE, HOST, REFERER, USER_AGENT,
@@ -14,6 +13,7 @@ use reqwest::header::{
 use crate::encrypt::Encrypt;
 use crate::uri;
 use crate::model;
+use crate::util;
 
 struct User {
   id: u64,
@@ -154,15 +154,14 @@ impl NcmClient {
   fn login_email(&mut self, email: String, password: String) -> Result<(), anyhow::Error> {
     let password = Encrypt::encrypt_hex(password);
     let client_token = "1_jVUMqWEPke0/1/Vu56xCmJpo5vP1grjn_SOVVDzOc78w8OKLVZ2JH7IfkjSXqgfmh";
-    let csrf_token = String::new();
-    let mut params = HashMap::new();
-    params.insert("csrf_token".to_owned(), csrf_token);
-    params.insert("clientToken".to_owned(), client_token.to_string());
-    params.insert("username".to_owned(), email.to_string());
-    params.insert("password".to_owned(), password);
-    params.insert("rememberLogin".to_owned(), "true".to_owned());
-    let params = Encrypt::encrypt_login(params);
-    let response = self.request(uri::LOGIN, Method::POST, Some(params))?;
+    let params = util::build_post_data(vec![
+      ("clientToken", client_token),
+      ("password", &password[..]),
+      ("username", &email[..]),
+      ("rememberLogin", "true"),
+      ("csrf_token", "")
+    ]);
+    let response = self.request(uri::LOGIN, Method::POST, params)?;
     self.save_cookies(&response);
     let text = response.text()?;
     let login = NcmClient::json_parse::<model::response::Login>(&text)?;
@@ -177,17 +176,17 @@ impl NcmClient {
     });
   }
 
-  fn get_user_playlist(&self) -> Result<model::response::Playlist, anyhow::Error> {
+  fn get_user_playlist(&self) -> Result<model::response::PlaylistList, anyhow::Error> {
     let uid = self.user.as_ref().unwrap().id;
-    let mut params = HashMap::new();
-    params.insert("uid".to_owned(), uid.to_string());
-    params.insert("limit".to_owned(), "1000".to_string());
-    params.insert("offset".to_owned(), "0".to_string());
-    params.insert("csrf_token".to_owned(), "".to_string());
-    let params = Encrypt::encrypt_login(params);
-    let response = self.request(uri::USER_PLAYLIST, Method::POST, Some(params))?;
+    let params = util::build_post_data(vec![
+      ("uid", &uid.to_string()[..]),
+      ("limit", "1000"),
+      ("offset", "0"),
+      ("csrf_token", "")
+    ]);
+    let response = self.request(uri::USER_PLAYLIST, Method::POST, params)?;
     let text = response.text()?;
-    let playlist = NcmClient::json_parse::<model::response::Playlist>(&text)?;
+    let playlist = NcmClient::json_parse::<model::response::PlaylistList>(&text)?;
     Ok(playlist)
   }
 
@@ -197,6 +196,20 @@ impl NcmClient {
       Some(data ) => Ok(data.clone()),
       None => Err(anyhow::anyhow!("get favorite playlist error")),
     }
+  }
+
+  fn get_playlist_detail(&self, playlist_id: u64) -> Result<model::playlist::Playlist, anyhow::Error> {
+    let params = util::build_post_data(vec![
+      ("id", &playlist_id.to_string()[..]),
+      ("total", "true"),
+      ("limit", "10000"),
+      ("offset", "0"),
+      ("n", "1000")
+    ]);
+    let response = self.request(uri::PLAYLIST_DETAIL, Method::POST, params)?;
+    let text = response.text()?;
+    let playlist = NcmClient::json_parse::<model::response::Playlist>(&text)?;
+    Ok(playlist.playlist)
   }
 }
 
@@ -215,10 +228,20 @@ mod tests {
   fn get_favorite_test() {
     let mut ncm_client = NcmClient::new();
     let setting = util::get_setting().unwrap();
-    ncm_client.login_email(setting.email, setting.password);
+    // ncm_client.login_email(setting.email, setting.password);
     let favorite = ncm_client.get_favorite_playlist();
     match favorite {
       Ok(data) => println!("the favorite playlist is {:?}", data),
+      Err(_) => {}
+    };
+  }
+
+  #[test]
+  fn get_playlist_detail_test() {
+    let ncm_client = NcmClient::new();
+    let playlist_detail = ncm_client.get_playlist_detail(95815468);
+    match playlist_detail {
+      Ok(data) => println!("the playlist detail is {:?}", data),
       Err(_) => {}
     };
   }
