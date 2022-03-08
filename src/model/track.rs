@@ -17,8 +17,9 @@ pub struct Artist {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Album {
   pub id: u64,
   pub name: String,
-  pub picUrl: String,
+  pub pic_url: String,
 }

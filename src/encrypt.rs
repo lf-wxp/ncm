@@ -1,14 +1,15 @@
+use base64;
 use hex;
-use std::collections::HashMap;
-use rand::distributions::{Alphanumeric, DistString};
-use rand::{thread_rng};
 use num_bigint::BigUint;
 use openssl::{
   hash::{hash, MessageDigest},
   symm::{encrypt, Cipher},
 };
-use base64;
-
+use rand::{
+  distributions::{Alphanumeric, DistString},
+  thread_rng,
+};
+use std::collections::HashMap;
 
 pub struct Encrypt;
 
@@ -34,14 +35,13 @@ impl Encrypt {
     let p = pad as u8 as char;
     let mut text = text;
     for _ in 0..pad {
-        text.push(p);
+      text.push(p);
     }
     let text = text.as_bytes();
     let cipher = Cipher::aes_128_cbc();
     let ciphertext = encrypt(cipher, key.as_bytes(), Some(b"0102030405060708"), text).unwrap();
     base64::encode(&ciphertext)
   }
-
 
   fn rsa(text: String) -> String {
     let text = text.chars().rev().collect::<String>();
@@ -67,6 +67,3 @@ mod tests {
     Encrypt::create_key(16);
   }
 }
-
-
-

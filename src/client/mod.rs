@@ -1,18 +1,18 @@
 #![allow(dead_code)]
-use std::fs;
-use chrono::{DateTime, Local};
 use anyhow::{self, Result};
-use reqwest::{self, blocking::Response};
-use serde::{Deserialize};
-use serde_json;
-use log::{info, error};
+use chrono::{DateTime, Local};
+use log::{error, info};
 use reqwest::header::{
   HeaderMap, ACCEPT, ACCEPT_ENCODING, CONTENT_TYPE, COOKIE, HOST, REFERER, USER_AGENT,
 };
+use reqwest::{self, blocking::Response};
+use serde::Deserialize;
+use serde_json;
+use std::fs;
 
 use crate::encrypt::Encrypt;
-use crate::uri;
 use crate::model;
+use crate::uri;
 use crate::util;
 
 struct User {
@@ -23,6 +23,11 @@ struct NcmClient {
   cookie_path: String,
   http_client: reqwest::blocking::Client,
   user: Option<User>,
+}
+
+enum SingleOrMultiple<T> {
+  Single(T),
+  Multiple(Vec<T>),
 }
 
 enum Method {
@@ -66,7 +71,7 @@ impl NcmClient {
     match &response {
       Ok(res) => {
         info!("response is {:?}", res);
-      },
+      }
       Err(err) => {
         error!("get response error, error is {:?}", err);
       }
@@ -75,14 +80,13 @@ impl NcmClient {
   }
 
   fn json_parse<'a, T: Deserialize<'a>>(data: &'a str) -> Result<T, serde_json::Error> {
-    serde_json::from_str::<T>(data)
-      .map_err(|e| {
-        format!(
-          "convert result failed, reason: {:?}; content: [{:?}]",
-          e, data
-        );
-        e
-      })
+    serde_json::from_str::<T>(data).map_err(|e| {
+      format!(
+        "convert result failed, reason: {:?}; content: [{:?}]",
+        e, data
+      );
+      e
+    })
   }
 
   fn get_common_headers() -> HeaderMap {
@@ -159,7 +163,7 @@ impl NcmClient {
       ("password", &password[..]),
       ("username", &email[..]),
       ("rememberLogin", "true"),
-      ("csrf_token", "")
+      ("csrf_token", ""),
     ]);
     let response = self.request(uri::LOGIN, Method::POST, params)?;
     self.save_cookies(&response);
@@ -182,7 +186,7 @@ impl NcmClient {
       ("uid", &uid.to_string()[..]),
       ("limit", "1000"),
       ("offset", "0"),
-      ("csrf_token", "")
+      ("csrf_token", ""),
     ]);
     let response = self.request(uri::USER_PLAYLIST, Method::POST, params)?;
     let text = response.text()?;
@@ -193,23 +197,47 @@ impl NcmClient {
   fn get_favorite_playlist(&self) -> Result<model::playlist::Playlist, anyhow::Error> {
     let playlist = self.get_user_playlist()?;
     match playlist.playlist.get(0) {
-      Some(data ) => Ok(data.clone()),
+      Some(data) => Ok(data.clone()),
       None => Err(anyhow::anyhow!("get favorite playlist error")),
     }
   }
 
-  fn get_playlist_detail(&self, playlist_id: u64) -> Result<model::playlist::Playlist, anyhow::Error> {
+  fn get_playlist_detail(
+    &self,
+    playlist_id: u64,
+  ) -> Result<model::playlist::Playlist, anyhow::Error> {
     let params = util::build_post_data(vec![
       ("id", &playlist_id.to_string()[..]),
       ("total", "true"),
       ("limit", "10000"),
       ("offset", "0"),
-      ("n", "1000")
+      ("n", "1000"),
     ]);
     let response = self.request(uri::PLAYLIST_DETAIL, Method::POST, params)?;
     let text = response.text()?;
     let playlist = NcmClient::json_parse::<model::response::Playlist>(&text)?;
     Ok(playlist.playlist)
+  }
+
+  fn get_song_url(
+    &self,
+    id: SingleOrMultiple<u64>,
+  ) -> Result<Vec<model::song::Song>, anyhow::Error> {
+    let ids = match id {
+      SingleOrMultiple::Single(id) => vec![id],
+      SingleOrMultiple::Multiple(ids) => ids,
+    };
+    let ids = serde_json::to_string(&ids)?;
+    // 设置码率
+    // set br to 320000
+    // if set br 990000 will get the flac music link
+    // but now I haven't finish the flac decode
+    let params = util::build_post_data(vec![("ids", &ids[..]), ("br", "320000")]);
+
+    let response = self.request(uri::SONG_URL, Method::POST, params)?;
+    let text = response.text()?;
+    let song = NcmClient::json_parse::<model::response::Song>(&text)?;
+    Ok(song.data)
   }
 }
 
@@ -242,6 +270,16 @@ mod tests {
     let playlist_detail = ncm_client.get_playlist_detail(95815468);
     match playlist_detail {
       Ok(data) => println!("the playlist detail is {:?}", data),
+      Err(_) => {}
+    };
+  }
+
+  #[test]
+  fn get_song_url_test() {
+    let ncm_client = NcmClient::new();
+    let song = ncm_client.get_song_url(SingleOrMultiple::Single(1825208330));
+    match song {
+      Ok(data) => println!("the song detail is {:?}", data),
       Err(_) => {}
     };
   }
